@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MNIST · Digit Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080c10;
+      --surface:   #0d1117;
+      --panel:     #111820;
+      --border:    #1e2d3d;
+      --accent:    #00d4ff;
+      --accent2:   #ff6b35;
+      --green:     #00ff88;
+      --text:      #c9d1d9;
+      --muted:     #4a5568;
+      --glow:      0 0 20px rgba(0,212,255,0.3);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Grid noise background ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Ambient orbs ── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 { width: 500px; height: 500px; background: var(--accent); top: -150px; left: -150px; }
+    .orb-2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; right: -100px; }
+
+    /* ── Layout ── */
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 48px 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .logo-mark {
+      width: 48px; height: 48px;
+      border: 2px solid var(--accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Space Mono', monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      box-shadow: var(--glow);
+    }
+    .header-text h1 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .header-text span { color: var(--accent); }
+    .header-text p {
+      font-size: 13px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-top: 2px;
+    }
+    .badge {
+      margin-left: auto;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--green);
+      border: 1px solid var(--green);
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(0,255,136,0.05);
+    }
+
+    /* ── Main grid ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.4;
+    }
+    .panel-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    /* ── Drop zone ── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: var(--panel);
+    }
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0,212,255,0.04);
+      box-shadow: var(--glow);
+    }
+    .drop-icon {
+      font-size: 42px;
+      margin-bottom: 16px;
+      display: block;
+      filter: grayscale(0.5);
+      transition: transform 0.3s;
+    }
+    .drop-zone:hover .drop-icon { transform: translateY(-4px); }
+    .drop-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .drop-sub {
+      font-size: 13px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+    }
+    #file-input { display: none; }
+
+    /* ── Preview ── */
+    .preview-wrap {
+      display: none;
+      margin-top: 20px;
+      gap: 16px;
+    }
+    .preview-wrap.visible { display: flex; }
+    .preview-box {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      text-align: center;
+    }
+    .preview-box img {
+      width: 100%;
+      object-fit: contain;
+      display: block;
+      max-height: 160px;
+    }
+    .preview-caption {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      padding: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* ── Button ── */
+    .predict-btn {
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--accent), #0099bb);
+      border: none;
+      border-radius: 10px;
+      color: #000;
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      letter-spacing: 0.5px;
+    }
+    .predict-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,212,255,0.4);
+    }
+    .predict-btn:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .predict-btn .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result ── */
+    .result-panel {
+      display: none;
+    }
+    .result-panel.visible { display: block; }
+
+    /* Big digit display */
+    .digit-hero {
+      text-align: center;
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .digit-number {
+      font-family: 'Space Mono', monospace;
+      font-size: 96px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      text-shadow: 0 0 40px rgba(0,212,255,0.5);
+      animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes popIn {
+      from { transform: scale(0.5); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+    .digit-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Confidence ring */
+    .conf-ring-wrap {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .ring-svg { flex-shrink: 0; }
+    .ring-track { fill: none; stroke: var(--border); stroke-width: 6; }
+    .ring-fill  { fill: none; stroke-width: 6; stroke-linecap: round;
+                  transform: rotate(-90deg); transform-origin: 50% 50%;
+                  transition: stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1); }
+    .ring-pct   { font-family: 'Space Mono', monospace; font-size: 14px;
+                  font-weight: 700; fill: var(--text); text-anchor: middle;
+                  dominant-baseline: middle; }
+    .conf-info h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .conf-info p {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* Probability bars */
+    .prob-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .prob-digit {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      width: 18px;
+      text-align: right;
+      color: var(--muted);
+    }
+    .prob-digit.active { color: var(--accent); }
+    .prob-bar-bg {
+      flex: 1;
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: var(--muted);
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    }
+    .prob-bar-fill.active {
+      background: linear-gradient(90deg, var(--accent), #00ff88);
+    }
+    .prob-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      width: 46px;
+      text-align: right;
+      color: var(--muted);
+    }
+    .prob-val.active { color: var(--text); }
+
+    /* Top 3 */
+    .top3-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .top3-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .top3-card.first { border-color: var(--accent); }
+    .top3-card .rank {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .top3-card .t3-digit {
+      font-family: 'Space Mono', monospace;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .top3-card.first .t3-digit { color: var(--accent); }
+    .top3-card .t3-pct {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* Error state */
+    .error-msg {
+      background: rgba(255,107,53,0.1);
+      border: 1px solid rgba(255,107,53,0.3);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 13px;
+      color: var(--accent2);
+      font-family: 'Space Mono', monospace;
+      display: none;
+      margin-top: 12px;
+    }
+    .error-msg.visible { display: block; }
+
+    /* Tips section */
+    .tips {
+      margin-top: 24px;
+      padding: 20px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .tips h3 {
+      font-size: 13px;
+      font-family: 'Space Mono', monospace;
+      color: var(--accent);
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+    }
+    .tips ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .tips li {
+      font-size: 13px;
+      color: var(--muted);
+      padding-left: 16px;
+      position: relative;
+    }
+    .tips li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    /* ── Full-width result layout for small screens ── */
+    .result-full { grid-column: 1 / -1; }
+
+    /* ── Placeholder state ── */
+    .placeholder-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--muted);
+      gap: 12px;
+    }
+    .placeholder-state span {
+      font-size: 40px;
+      opacity: 0.3;
+    }
+    .placeholder-state p {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="wrapper">
+    <header>
+      <div class="logo-mark">01</div>
+      <div class="header-text">
+        <h1>Digit <span>Intelligence</span></h1>
+        <p>CNN · MNIST · 99%+ Accuracy</p>
+      </div>
+      <div class="badge">● MODEL ONLINE</div>
+    </header>
+
+    <div class="main-grid">
+
+      <!-- LEFT: Upload Panel -->
+      <div class="panel">
+        <div class="panel-label">// Input</div>
+
+        <div class="drop-zone" id="drop-zone">
+          <span class="drop-icon">📷</span>
+          <div class="drop-title">Drop your image here</div>
+          <div class="drop-sub">PNG · JPG · JPEG · max 10MB</div>
+          <input type="file" id="file-input" accept="image/png,image/jpg,image/jpeg">
+        </div>
+
+        <div class="preview-wrap" id="preview-wrap">
+          <div class="preview-box">
+            <img id="preview-orig" src="" alt="Original" />
+            <div class="preview-caption">Original</div>
+          </div>
+          <div class="preview-box" id="processed-box" style="display:none">
+            <img id="preview-proc" src="" alt="Processed" />
+            <div class="preview-caption">Processed 28×28</div>
+          </div>
+        </div>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <button class="predict-btn" id="predict-btn" disabled>
+          Analyse Digit
+        </button>
+
+        <div class="tips">
+          <h3>// Tips for best results</h3>
+          <ul>
+            <li>Write on white paper with dark ink</li>
+            <li>Good even lighting, avoid shadows</li>
+            <li>Centre digit in the frame</li>
+            <li>Crop close to the digit if possible</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- RIGHT: Result Panel -->
+      <div class="panel result-panel" id="result-panel">
+        <div class="panel-label">// Prediction</div>
+
+        <div class="digit-hero">
+          <div class="digit-number" id="result-digit">—</div>
+          <div class="digit-label">Predicted Digit</div>
+        </div>
+
+        <div class="conf-ring-wrap">
+          <svg class="ring-svg" width="80" height="80" viewBox="0 0 80 80">
+            <circle class="ring-track" cx="40" cy="40" r="34"/>
+            <circle class="ring-fill" id="ring-fill" cx="40" cy="40" r="34"
+              stroke="var(--accent)"
+              stroke-dasharray="213.6"
+              stroke-dashoffset="213.6"/>
+            <text class="ring-pct" id="ring-pct" x="40" y="40">0%</text>
+          </svg>
+          <div class="conf-info">
+            <h3 id="conf-text">—</h3>
+            <p id="conf-sub">CONFIDENCE SCORE</p>
+          </div>
+        </div>
+
+        <div class="prob-label">// All class probabilities</div>
+        <div id="prob-bars"></div>
+
+        <div class="top3-grid" id="top3-grid"></div>
+      </div>
+
+      <!-- Placeholder before first prediction -->
+      <div class="panel" id="placeholder-panel">
+        <div class="placeholder-state">
+          <span>🔢</span>
+          <p>Awaiting input image...</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const dropZone   = document.getElementById('drop-zone');
+    const fileInput  = document.getElementById('file-input');
+    const previewWrap= document.getElementById('preview-wrap');
+    const previewOrig= document.getElementById('preview-orig');
+    const previewProc= document.getElementById('preview-proc');
+    const procBox    = document.getElementById('processed-box');
+    const predictBtn = document.getElementById('predict-btn');
+    const resultPanel= document.getElementById('result-panel');
+    const placeholder= document.getElementById('placeholder-panel');
+    const errorMsg   = document.getElementById('error-msg');
+    const ringFill   = document.getElementById('ring-fill');
+    const ringPct    = document.getElementById('ring-pct');
+    const probBars   = document.getElementById('prob-bars');
+    const top3Grid   = document.getElementById('top3-grid');
+
+    let selectedFile = null;
+    const CIRCUMFERENCE = 2 * Math.PI * 34; // 213.6
+
+    // Click to open
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+    // Drag & drop
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file) return;
+      if (!['image/png','image/jpeg','image/jpg'].includes(file.type)) {
+        showError('Please upload a PNG or JPG image.');
+        return;
+      }
+      selectedFile = file;
+      hideError();
+      const reader = new FileReader();
+      reader.onload = ev => {
+        previewOrig.src = ev.target.result;
+        previewWrap.classList.add('visible');
+        procBox.style.display = 'none';
+        predictBtn.disabled = false;
+        // Reset result
+        resultPanel.classList.remove('visible');
+        placeholder.style.display = '';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    predictBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      setLoading(true);
+      hideError();
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/predict', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Prediction failed');
+        renderResult(data);
+      } catch (err) {
+        showError('Error: ' + err.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    function renderResult(data) {
+      const { predicted_digit, confidence, top3, all_probabilities, processed_image } = data;
+
+      // Show processed preview
+      previewProc.src = 'data:image/png;base64,' + processed_image;
+      procBox.style.display = '';
+
+      // Show result panel
+      placeholder.style.display = 'none';
+      resultPanel.classList.add('visible');
+
+      // Big digit
+      document.getElementById('result-digit').textContent = predicted_digit;
+
+      // Confidence ring
+      const pct = confidence;
+      const offset = CIRCUMFERENCE - (pct / 100) * CIRCUMFERENCE;
+      const color = pct >= 80 ? '#00d4ff' : pct >= 50 ? '#f0a500' : '#ff6b35';
+      ringFill.style.stroke = color;
+      setTimeout(() => {
+        ringFill.style.strokeDashoffset = offset;
+        ringPct.textContent = pct.toFixed(1) + '%';
+      }, 50);
+
+      // Conf text
+      document.getElementById('conf-text').textContent = pct.toFixed(2) + '%';
+      const verdict = pct >= 90 ? 'High confidence' : pct >= 60 ? 'Moderate confidence' : 'Low confidence';
+      document.getElementById('conf-sub').textContent = verdict.toUpperCase();
+
+      // Probability bars
+      probBars.innerHTML = '';
+      all_probabilities.forEach((p, i) => {
+        const isActive = i === predicted_digit;
+        probBars.innerHTML += `
+          <div class="prob-row">
+            <span class="prob-digit ${isActive ? 'active' : ''}">${i}</span>
+            <div class="prob-bar-bg">
+              <div class="prob-bar-fill ${isActive ? 'active' : ''}"
+                   id="bar-${i}" style="width:0%"></div>
+            </div>
+            <span class="prob-val ${isActive ? 'active' : ''}">${p.toFixed(1)}%</span>
+          </div>`;
+      });
+      // Animate bars
+      setTimeout(() => {
+        all_probabilities.forEach((p, i) => {
+          document.getElementById(`bar-${i}`).style.width = p + '%';
+        });
+      }, 80);
+
+      // Top 3
+      top3Grid.innerHTML = top3.map((t, idx) => `
+        <div class="top3-card ${idx === 0 ? 'first' : ''}">
+          <div class="rank">#${idx + 1}</div>
+          <div class="t3-digit">${t.digit}</div>
+          <div class="t3-pct">${t.confidence.toFixed(1)}%</div>
+        </div>`).join('');
+    }
+
+    function setLoading(on) {
+      predictBtn.disabled = on;
+      predictBtn.innerHTML = on
+        ? '<span class="spinner"></span>Analysing...'
+        : 'Analyse Digit';
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.add('visible');
+    }
+    function hideError() {
+      errorMsg.classList.remove('visible');
+    }
+  </script>
+</body>
+</html>
